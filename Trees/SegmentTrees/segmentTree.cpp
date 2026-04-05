@@ -143,30 +143,3 @@ void segTree<T>::update(int ind, const T &val)
     updateElem(0, numElem -1, ind, val, 0);
 }
 
-
-class NumArray {
-
-    private:
-        unique_ptr<segTree<int>> tree;
-
-    public:
-
-        NumArray(vector<int>& nums) {
-            tree = make_unique<segTree<int>>(nums, make_unique<sumSegTreeStrategy<int>>());
-        }
-    
-    void update(int index, int val) {
-        tree->update(index, val);
-    }
-    
-    int sumRange(int left, int right) {
-        return tree->search(left, right);
-    }
-};
-
-/**
- * Your NumArray object will be instantiated and called as such:
- * NumArray* obj = new NumArray(nums);
- * obj->update(index,val);
- * int param_2 = obj->sumRange(left,right);
- */
