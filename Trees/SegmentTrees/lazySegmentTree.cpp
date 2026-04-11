@@ -405,31 +405,39 @@ void segTree<T, U>::applyAndPushUpdates(int low, int high, int pos)
 {
     if(tree_[pos].isLazy)
     {
-        // propagate the lazy value to the current node
-        tree_[pos].value = updateStrat_->apply(tree_[pos].value, tree_[pos].lazy, low, high);
+        // // propagate the lazy value to the current node
+        // tree_[pos].value = updateStrat_->apply(tree_[pos].value, tree_[pos].lazy, low, high);
 
         // if its not a leaf node then propagate the lazy value to its children
         if(low != high)
         {
-            tree_[2 * pos + 1].lazy = updateStrat_->combine(tree_[2 * pos + 1].lazy, tree_[pos].lazy);
-            tree_[2 * pos + 1].isLazy = true;
+            // update child node as we now following laxy to children philosophy
+            // Which means once we push updates to children they will be updated
+            // to self but lazy to their children
 
-            tree_[2 * pos + 2].lazy = updateStrat_->combine(tree_[2 * pos + 2].lazy, tree_[pos].lazy);
+            int mid = low + (high - low) / 2;
+            tree_[2 * pos + 1].value = updateStrat_->apply(tree_[2 * pos + 1].value, tree_[pos].lazy, low, mid);
+            tree_[2 * pos + 2].value = updateStrat_->apply(tree_[2 * pos + 2].value, tree_[pos].lazy, mid + 1, high);
+
+            // Push laziness down
+            tree_[2 * pos + 1].isLazy = true;
             tree_[2 * pos + 2].isLazy = true;
+
+            // Combine chidren lazy values for cascading updates
+            tree_[2 * pos + 1].lazy = updateStrat_->combine(tree_[2 * pos + 1].lazy, tree_[pos].lazy);
+            tree_[2 * pos + 2].lazy = updateStrat_->combine(tree_[2 * pos + 2].lazy, tree_[pos].lazy);
+
         }
 
-        // clear the lazy value for the current node
-        tree_[pos].lazy = updateStrat_->identity();
+        // Make cur node as non-lazy as it has pushed lazyness
         tree_[pos].isLazy = false;
+        tree_[pos].lazy = updateStrat_->identity();
     }
 }
 
 template <typename T, typename U>
 T segTree<T, U>::rangeSearch(int low, int high, int i , int j, int pos)
 {
-    // The very first thing is to propagate the
-    // lazy value if there is any pending update for the current node
-    applyAndPushUpdates(low, high, pos);
 
     // check if total overlap then return
     if(low >= i && high <= j)
@@ -440,6 +448,12 @@ T segTree<T, U>::rangeSearch(int low, int high, int i , int j, int pos)
         return mergeStrat_->identity();
 
     // partial overlap need to check both sides
+
+    // The very first thing is to propagate the
+    // lazy value if there is any pending update for the children
+    // in case of partial overlap
+    applyAndPushUpdates(low, high, pos);
+
     int mid = low + (high - low) / 2;
     T left = rangeSearch(low, mid, i, j, 2 * pos + 1);
     T right = rangeSearch(mid + 1 , high , i, j, 2 * pos + 2);
@@ -463,29 +477,28 @@ T segTree<T, U>::search(int i , int j)
 template <typename T, typename U>
 void segTree<T, U>::updateElem(int low, int high, int i , int j, const U &val, int pos)
 {
-    // The very first thing is to propagate the
-    // lazy value if there is any pending update for the current node
-    applyAndPushUpdates(low, high, pos);
 
     // This is total overlap
     if(low >= i && high <= j)
     {
+        // Node will always be updated to self and lazy to children
         tree_[pos].value = updateStrat_->apply(tree_[pos].value, val, low, high);
 
-        if(low != high)
-        {
-            tree_[2 * pos + 1].lazy = updateStrat_->combine(tree_[2 * pos + 1].lazy, val);
-            tree_[2 * pos + 1].isLazy = true;
+        // Make node lazy to children
+        tree_[pos].isLazy = true;
+        tree_[pos].lazy = updateStrat_->combine(tree_[pos].lazy, val);
 
-            tree_[2 * pos + 2].lazy = updateStrat_->combine(tree_[2 * pos + 2].lazy, val);
-            tree_[2 * pos + 2].isLazy = true;
-        }
         return;
     }
 
     // No overlap
     if(j < low || i > high)
         return;
+
+    // Parital overlap
+    // The very first thing is to propagate the
+    // lazy value if there is any pending update for children
+    applyAndPushUpdates(low, high, pos);
 
     int mid = low + (high - low) / 2;
 
