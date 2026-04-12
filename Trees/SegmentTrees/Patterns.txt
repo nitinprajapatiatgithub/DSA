@@ -1,0 +1,133 @@
+================================================================================
+SEGMENT TREE PROBLEM PATTERNS & DATA MOLDING STRATEGIES
+================================================================================
+A Segment Tree is fundamentally a spatial partitioning structure. The secret to 
+mastering it lies in identifying:
+1. What the "Index" of the tree represents (Time? Value? Spatial Coordinate?)
+2. What the "Node" stores (Frequency? Max Value? Combined State Struct?)
+
+--------------------------------------------------------------------------------
+CATEGORY 1: POINT UPDATES (Use iterativeSegmentTree.cpp or segmentTree.cpp)
+--------------------------------------------------------------------------------
+1. Standard Array Queries (RMQ / RSQ)
+   - The Mold: Tree Index = Array Index. Node = Array Value.
+   - Strategy: Direct 1:1 mapping.
+   - Time Complexity: Build: O(N). Update: O(log N). Query: O(log N).
+   - Space Complexity: O(2N) for Iterative. O(4N) for Recursive Static.
+
+2. Inversion Counting (Pairs where i < j and A[i] > A[j])
+   - The Mold: Tree Index = Compressed Value (Rank). Node = Frequency Count.
+   - Strategy: Iterate the array left-to-right. For each value X, query the sum in range [X + 1, MaxValue]. Then, point-update index X with +1.
+   - Time Complexity: O(N log N) to process all elements (assuming coordinate compression is used).
+   - Space Complexity: O(N) where N is the number of unique elements (ranks).
+
+3. First Element Greater Than or Equal to X (Binary Search on Tree)
+   - The Mold: Tree Index = Array Index. Node = Maximum value in that segment.
+   - Strategy: Start at root. If `left_child.max >= X`, move left. Otherwise, subtract left child's contribution (if applicable) and move right.
+   - Time Complexity: Query: O(log N).
+   - Space Complexity: O(4N).
+
+4. Maximum Subarray Sum (Kadane's in a Tree)
+   - The Mold: Tree Index = Array Index. Node = Custom Struct.
+   - Strategy: Node stores `{total_sum, max_prefix, max_suffix, max_subarray}`. Combine via `parent.max_subarray = max(left.max_subarray, right.max_subarray, left.max_suffix + right.max_prefix)`.
+   - Time Complexity: Update/Query: O(log N). Note: Constant factor is higher due to struct merging operations.
+   - Space Complexity: O(4N) blocks of memory, but each block holds a 4-integer struct.
+
+5. Longest Increasing Subsequence (LIS) in O(N log N)
+   - The Mold: Tree Index = Compressed Value. Node = Max LIS length ending at this value.
+   - Strategy: For value X, query the MAX in range [0, X-1] (let this be M). Update tree at index X with value M + 1.
+   - Time Complexity: O(N log N) to process the entire array.
+   - Space Complexity: O(N) after coordinate compression.
+
+6. Distinct Elements in a Range (Offline Queries)
+   - The Mold: Sort queries by Right endpoint. Tree Index = Array Index. Node = Binary flag (1 if rightmost occurrence, 0 otherwise).
+   - Strategy: Maintain a hash map of last seen indices. If a value repeats, point-update old index to 0, and new index to 1. Querying sum of [L, R] gives distinct count.
+   - Time Complexity: O(Q log Q) to sort queries + O(N log N) to process elements and updates.
+   - Space Complexity: O(N) for the tree and O(N) for the `last_seen` map.
+
+--------------------------------------------------------------------------------
+CATEGORY 2: RANGE UPDATES (Use lazySegmentTree.cpp)
+--------------------------------------------------------------------------------
+1. Range Arithmetic Progression Addition
+   - The Mold: Lazy Tag = Pair `(start_val, common_difference)`.
+   - Strategy: When pushing tags down, left child gets `(start_val, diff)`. Right child gets `(start_val + diff * length_of_left_child, diff)`.
+   - Time Complexity: Range Update: O(log N). Range Query: O(log N).
+   - Space Complexity: O(4N) for nodes + O(4N) for lazy tags.
+
+2. Binary Range Flips (0s to 1s)
+   - The Mold: Node = Count of 1s. Lazy Tag = Boolean `is_flipped`.
+   - Strategy: `UpdateStrategy::apply` changes the node value to `(high - low + 1) - current_value`.
+   - Time Complexity: Range Update: O(log N). Range Query: O(log N).
+   - Space Complexity: O(4N).
+
+3. Bracket / Parentheses Matching
+   - The Mold: Node = Struct `{unmatched_open, unmatched_close}`.
+   - Strategy: `matches = min(left.open, right.close)`. Parent's `open` = `left.open + right.open - matches`.
+   - Time Complexity: Range Update: O(log N). Range Query: O(log N).
+   - Space Complexity: O(4N) tracking structs.
+
+4. Painting a Fence (Range Assignment)
+   - The Mold: Lazy Tag = Target Color.
+   - Strategy: Use an assignment strategy where `apply` replaces the current value entirely rather than adding to it.
+   - Time Complexity: Range Update: O(log N). Range Query: O(log N).
+   - Space Complexity: O(4N).
+
+5. Range Affine Transformations (A[i] = A[i] * B + C)
+   - The Mold: Lazy Tag = Pair `(multiplier, addend)`.
+   - Strategy: Composing affine functions: `new_mult = old_mult * new_mult`, `new_add = old_add * new_mult + new_add`.
+   - Time Complexity: Range Update: O(log N). Range Query: O(log N).
+   - Space Complexity: O(4N) holding pairs.
+
+--------------------------------------------------------------------------------
+CATEGORY 3: SPARSE / MASSIVE DOMAINS (Use dynamicLazySegmentTree.cpp)
+--------------------------------------------------------------------------------
+1. Stream Inversions (Values up to 10^9, no offline sorting)
+   - The Mold: Tree bounds = [0, 10^9]. Node = Frequency.
+   - Strategy: Query [X + 1, 10^9] and update X without pre-compressing.
+   - Time Complexity: O(log(MaxVal)) per operation. Total: O(N log(MaxVal)).
+   - Space Complexity: O(N log(MaxVal)). We only create nodes along the path we traverse. 10^5 updates bound at 10^9 limit max depth to ~30 nodes per update.
+
+2. Line Segment Coverage (Klee's Measure Problem)
+   - The Mold: Tree bounds = [-10^9, 10^9]. Node = Length of covered segments.
+   - Strategy: For segment [L, R], range update [L, R-1] with +1. The root node's value is the union length of all active segments.
+   - Time Complexity: Update: O(log(MaxVal)).
+   - Space Complexity: O(N log(MaxVal)).
+
+3. 2D Range Queries via Tree of Trees
+   - The Mold: Outer Tree = X coordinate. Node Value of Outer Tree = Pointer to an Inner `dynamicLazySegmentTree` representing the Y coordinate.
+   - Strategy: Traverse down X-tree. At every node visited, insert Y into that node's inner Y-tree.
+   - Time Complexity: Insert/Query: O(log(MaxX) * log(MaxY)).
+   - Space Complexity: O(N log(MaxX) * log(MaxY)). This is extremely memory heavy and often requires careful memory pooling to pass strict limits.
+
+--------------------------------------------------------------------------------
+CATEGORY 4: HISTORICAL & PREFIX QUERIES (Use persistentSegmentTree.cpp)
+--------------------------------------------------------------------------------
+1. K-th Smallest Element in [L, R] (MKTHNUM)
+   - The Mold: Tree Index = Rank. Versions = Array Indices. Node = Frequency.
+   - Strategy: Build left-to-right. To query [L, R], pass `roots[R]` and `roots[L-1]` to `queryKth`. Subtract left-child values to decide traversal.
+   - Time Complexity: Build: O(N log N). Query: O(log N).
+   - Space Complexity: O(N log N). Path Copying creates exactly `log N` new nodes for every point update. For N=10^5, this is ~1.7 million nodes.
+
+2. Elements Strictly Less Than X in [L, R]
+   - The Mold: Same as MKTHNUM.
+   - Strategy: Find compressed rank of X. Query Range Sum [0, Rank - 1] on `roots[R]` and subtract same query on `roots[L-1]`.
+   - Time Complexity: Query: O(log N).
+   - Space Complexity: O(N log N).
+
+3. 2D Range Counting (Offline Points in a Rectangle)
+   - The Mold: Sort points by X-coordinate. Tree Index = Y-coordinate. Versions = X-coordinates.
+   - Strategy: Updating the tree builds a prefix sum of Y-coordinates. To count points in `[X1, X2] x [Y1, Y2]`, query `search(Version_X2, Y1, Y2) - search(Version_X1_minus_1, Y1, Y2)`.
+   - Time Complexity: Build: O(N log(MaxY)). Query: O(log(MaxY)).
+   - Space Complexity: O(N log(MaxY)).
+
+4. Lowest Common Ancestor (LCA) Path Queries
+   - The Mold: Flatten tree using Euler Tour. Versions = Path from Root to node U.
+   - Strategy: Prefix sums on tree paths. Sum of path between U and V: `search(roots[U]) + search(roots[V]) - search(roots[LCA]) - search(roots[Parent(LCA)])`.
+   - Time Complexity: Build: O(N log N). Query: O(log N). (Assuming LCA is found in O(log N) or O(1)).
+   - Space Complexity: O(N log N).
+
+5. Functional Arrays (Version Control for Arrays)
+   - The Mold: Tree Index = Array Index. Node = Array Value.
+   - Strategy: Point updates return a new `shared_ptr` root. Keep them in a history array. Jump back to any previous state by swapping the current root pointer.
+   - Time Complexity: Update: O(log N). Query: O(log N). Jump Back to Version K: O(1) (pointer swap).
+   - Space Complexity: O(Q log N) where Q is the total number of update operations.
