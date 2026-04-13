@@ -1,0 +1,84 @@
+---
+
+### 2. `patterns.txt`
+
+```text
+================================================================================
+FENWICK TREE (BIT) PROBLEM PATTERNS & DATA MOLDING STRATEGIES
+================================================================================
+While a Segment Tree is a spatial partitioning structure, a Fenwick Tree is 
+fundamentally an algebraic prefix-accumulator. 
+
+The secret to mastering it lies in identifying how to map your problem's 
+domain into a "Prefix State."
+
+--------------------------------------------------------------------------------
+PATTERN 1: COORDINATE COMPRESSION + FREQUENCY COUNTING (The "Molding" Trick)
+--------------------------------------------------------------------------------
+When data values are massive (10^9) but the number of elements is small (10^5), 
+you cannot create a tree of size 10^9. Instead, map values to their relative ranks.
+
+* The Mold: Tree Index = Compressed Rank. Node = Frequency of that Rank.
+* Strategy: Iterate the array Right-to-Left. 
+  1. For element X, find its Rank.
+  2. Query `queryPrefix(Rank - 1)` to count elements already seen that are smaller.
+  3. Update `update(Rank, 1)` to add the current element to the pool.
+
+* Famous Problems: 
+  - LeetCode 315 (Count of Smaller Numbers After Self)
+  - SPOJ INVCNT (Inversion Count)
+* Complexity: O(N log N) Time, O(N) Space.
+
+--------------------------------------------------------------------------------
+PATTERN 2: THE "JOINT GUEST LIST" (Multi-Domain Compression)
+--------------------------------------------------------------------------------
+Used when a relationship formula compares different scales of values, requiring 
+both to exist on the same coordinate axis.
+
+* Famous Problem: LeetCode 493 (Reverse Pairs: nums[i] > 2 * nums[j])
+* Strategy: 
+  1. Create a massive temporary array containing BOTH `nums[i]` and `2 * nums[i]`.
+  2. Sort and unique this combined array to generate a unified rank map.
+  3. Query the tree using the rank of `nums[i] / 2.0`, but update the tree 
+     using the rank of the original `nums[i]`.
+
+--------------------------------------------------------------------------------
+PATTERN 3: DIFFERENCE ARRAY (Range Update & Point Query)
+--------------------------------------------------------------------------------
+Fenwick Trees natively support Point Updates and Range Queries. We can invert 
+this behavior using the properties of a Difference Array.
+
+* The Mold: Tree Index = Array Index. Node = Difference between A[i] and A[i-1].
+* Strategy: 
+  - To add V to range [L, R]: execute `update(L, V)` and `update(R + 1, -V)`.
+  - To find the value of element at index i: execute `queryPrefix(i)`.
+* Complexity: Update O(log N), Query O(log N).
+
+--------------------------------------------------------------------------------
+PATTERN 4: BINARY LIFTING ON BIT (Order Statistics / K-th Smallest)
+--------------------------------------------------------------------------------
+Finding the exact index where a prefix sum reaches K (e.g., finding the K-th 
+smallest active element).
+
+* Strategy: Instead of Binary Searching over the prefix queries O(log^2 N), 
+  you can jump through the bits of the tree exactly like a binary search tree.
+* Logic: Start from the highest power of 2. If `tree[current_pos + jump]` < K, 
+  subtract `tree[current_pos + jump]` from K and move `current_pos` forward.
+* Complexity: strictly O(log N).
+* Famous Problem: Codeforces/GFG Order Statistic Trees.
+
+--------------------------------------------------------------------------------
+PATTERN 5: DOUBLE FENWICK TREE (Range Update & Range Query)
+--------------------------------------------------------------------------------
+To achieve BOTH Range Updates and Range Queries in O(log N), you must maintain 
+two separate Fenwick Trees.
+
+* The Math: If you add V to [L, R], the prefix sum up to an index X (where X <= R) 
+  increases by V * (X - L + 1). 
+  This expands to: (V * X) - (V * (L - 1)).
+* The Mold: 
+  - Tree 1 stores the constants: `V * (L - 1)`.
+  - Tree 2 stores the multipliers: `V`.
+* Query for Prefix X becomes: `(Tree2.queryPrefix(X) * X) - Tree1.queryPrefix(X)`.
+* Complexity: O(log N) for both updates and queries.
+================================================================================
