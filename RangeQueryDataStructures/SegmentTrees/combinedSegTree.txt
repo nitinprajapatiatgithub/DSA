@@ -1,0 +1,2053 @@
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <stdexcept>
+
+using namespace std;
+
+/**
+ * @class mergeStrategy
+ * @brief Abstract strategy interface for merging segment tree values.
+ *
+ * Defines the merge behavior used by the tree to combine two child values
+ * and the identity element for the merge operation.
+ *
+ * @tparam T Type of values stored in the tree.
+ */
+template <typename T>
+class mergeStrategy
+{
+    public:
+        virtual T merge(const T &a, const T &b) = 0;
+        virtual T identity() = 0;
+        virtual ~mergeStrategy() {}
+};
+
+/**
+ * @class updateStrategy
+ * @brief Abstract strategy interface for updating segment tree values.
+ *
+ * Defines how an update value is applied to an existing node value and
+ * provides an identity element for update combination.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class updateStrategy
+{
+    public:
+        virtual T apply(const T &a, const U &b) = 0;
+        virtual U identity() = 0;
+        virtual ~updateStrategy() {}
+};
+
+/**
+ * @class sumMergeStrategy
+ * @brief Merge strategy for range sum operations.
+ *
+ * Implements sum behavior for segment tree nodes and returns 0 as the
+ * identity element.
+ *
+ * @tparam T Type of values stored in the tree.
+ */
+template <typename T>
+class sumMergeStrategy : public mergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return a + b;
+        }
+
+        T identity() override
+        {
+            return T();
+        }
+};
+
+/**
+ * @class sumUpdateStrategy
+ * @brief Update strategy for point add operations.
+ *
+ * Applies an additive update to a single tree value.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class sumUpdateStrategy : public updateStrategy<T, U>
+{
+    public:
+        T apply(const T &a, const U &b) override
+        {
+            return a + static_cast<T>(b);
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class sumAssignStrategy
+ * @brief Update strategy for point assignment operations.
+ *
+ * Replaces the existing value with the new update value.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class sumAssignStrategy : public updateStrategy<T, U>
+{
+    public:
+        T apply(const T &a, const U &b) override
+        {
+            return static_cast<T>(b);
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+template <typename T, typename U>
+class segTree
+{
+    private:
+        vector<T> tree_;
+        unique_ptr<mergeStrategy<T>> mergeStrat_;
+        unique_ptr<updateStrategy<T, U>> updateStrat_;
+        int numElem;
+
+        /**
+         * @brief Recursively build the segment tree from input data.
+         *
+         * @param inArr Input array to build from
+         * @param low Current segment left index
+         * @param high Current segment right index
+         * @param pos Current node index in the tree array
+         * @return Value stored at the current node after building
+         */
+        T build(const vector<T> &inArr, int low, int high, int pos);
+
+        /**
+         * @brief Recursively search for the merge result over a query range.
+         *
+         * Propagates tree values through partial overlaps and uses the merge
+         * strategy to combine child results.
+         *
+         * @param low Current segment left index
+         * @param high Current segment right index
+         * @param i Query range left index
+         * @param j Query range right index
+         * @param pos Current node index in the tree array
+         * @return Merged result for the query range inside this segment
+         */
+        T rangeSearch(int low, int high, int i , int j, int pos);
+
+        /**
+         * @brief Recursively update a single index value in the tree.
+         *
+         * Applies the update at the leaf and recomputes parent values using the
+         * merge strategy while traversing back up the recursion.
+         *
+         * @param low Current segment left index
+         * @param high Current segment right index
+         * @param ind Index to update
+         * @param val Update value to apply
+         * @param pos Current node index in the tree array
+         */
+        void updateElem(int low, int high, int ind, const U &val, int pos);
+
+    public:
+        /**
+         * @brief Construct a segment tree from an input array.
+         *
+         * @param inArr Input array used to initialize leaf values
+         * @param mergeStrat Strategy object used to merge child nodes
+         * @param updateStrat Strategy object used to apply update values
+         */
+        segTree(const vector<T> &inArr, unique_ptr<mergeStrategy<T>> mergeStrat, unique_ptr<updateStrategy<T, U>> updateStrat);
+
+        /**
+         * @brief Query the merge result over a half-open range [i, j].
+         *
+         * @param i Query range left index
+         * @param j Query range right index
+         * @return Merged result for the range
+         * @throws std::out_of_range if query indices are invalid
+         */
+        T search(int i , int j);
+
+        /**
+         * @brief Update a single element in the segment tree.
+         *
+         * The update is applied at the leaf node, and all affected parents
+         * are recomputed using the merge strategy.
+         *
+         * @param i Index to update
+         * @param val Update value to apply at index i
+         * @throws std::out_of_range if the index is invalid
+         */
+        void update(int i, const U &val);
+};
+
+template <typename T, typename U>
+T segTree<T, U>::build(const vector<T> &inArr, int low, int high, int pos)
+{
+    if(low == high)
+    {
+        tree_[pos] = inArr[low];
+        return tree_[pos];
+    }
+
+    int mid = low + (high - low) / 2;
+
+    T left = build(inArr, low, mid, 2 * pos + 1);
+    T right = build(inArr, mid +1, high, 2 * pos + 2);
+
+    tree_[pos] = mergeStrat_->merge(left, right);
+
+    return tree_[pos];
+}
+
+template <typename T, typename U>
+segTree<T, U>::segTree(const vector<T> &inArr, unique_ptr<mergeStrategy<T>> mergeStrat, unique_ptr<updateStrategy<T, U>> updateStrat):
+         mergeStrat_(move(mergeStrat)),
+         updateStrat_(move(updateStrat)),
+         numElem(static_cast<int>(inArr.size()))
+{
+    if(numElem == 0)
+        return;
+
+    tree_.assign(4 * numElem, mergeStrat_->identity());
+
+    // Now build the tree 
+    build(inArr, 0, numElem -1, 0);   
+}
+
+template <typename T, typename U>
+T segTree<T, U>::rangeSearch(int low, int high, int i , int j, int pos)
+{
+    // check if total overlap then return
+    if(low >= i && high <= j)
+        return tree_[pos];
+
+    // if no overlap return identity value
+    if(high < i || low > j)
+        return mergeStrat_->identity();
+
+    // partial overlap need to check both sides
+    int mid = low + (high - low) / 2;
+    T left = rangeSearch(low, mid, i, j, 2 * pos + 1);
+    T right = rangeSearch(mid + 1 , high , i, j, 2 * pos + 2);
+
+    return mergeStrat_->merge(left, right);
+}
+
+template <typename T, typename U>
+T segTree<T, U>::search(int i , int j)
+{
+    if( (i < 0 || i > numElem -1) 
+        || (j < 0 || j > numElem -1) 
+        || (i > j))
+    {
+        throw std::out_of_range("Index is out of bounds!");
+    }
+
+    return rangeSearch(0, numElem -1, i, j, 0);
+}
+
+template <typename T, typename U>
+void segTree<T, U>::updateElem(int low, int high, int ind, const U &val, int pos)
+{
+    // This is total overlap
+    if(low == high)
+    {
+        tree_[pos] = updateStrat_->apply(tree_[pos], val);
+        return;
+    }
+
+    // No overlap
+    if(ind < low || ind > high)
+        return;
+
+    int mid = low + (high - low) / 2;
+
+    // Partial overlap
+    if (ind <= mid)
+        updateElem(low, mid, ind, val, 2 * pos + 1);
+    else
+        updateElem(mid + 1, high, ind, val, 2 * pos + 2);
+
+    tree_[pos] = mergeStrat_->merge(tree_[2 * pos + 1], tree_[2 * pos + 2]);
+}
+
+template <typename T, typename U>
+void segTree<T, U>::update(int ind, const U &val)
+{
+    if( ind < 0 || ind > numElem - 1)
+        throw std::out_of_range("Index is out of bounds!");
+
+    updateElem(0, numElem -1, ind, val, 0);
+}
+
+/* Leaving below code as commented as it provides usage guidance. */
+/*
+class NumArray {
+
+    private:
+        unique_ptr<segTree<int, int>> tree;
+
+    public:
+
+        NumArray(const vector<int>& nums) {
+            tree = make_unique<segTree<int, int>>(nums,
+                make_unique<sumMergeStrategy<int>>(),
+                make_unique<sumUpdateStrategy<int, int>>());
+        }
+    
+        void update(int index, int val) {
+            tree->update(index, val);
+        }
+    
+        int sumRange(int left, int right) {
+            return tree->search(left, right);
+        }
+};
+*/
+/**
+ * Your NumArray object will be instantiated and called as such:
+ * NumArray* obj = new NumArray(nums);
+ * obj->update(index,val);
+ * int param_2 = obj->sumRange(left,right);
+ */
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <stdexcept>
+
+using namespace std;
+
+/**
+ * @class mergeStrategy
+ * @brief Abstract strategy interface for merging segment tree values.
+ *
+ * Defines the merge behavior used by the tree to combine two child values
+ * and the identity element for the merge operation.
+ *
+ * @tparam T Type of values stored in the tree.
+ */
+template <typename T>
+class mergeStrategy
+{
+    public:
+        virtual T merge(const T &a, const T &b) = 0;
+        virtual T identity() = 0;
+        virtual ~mergeStrategy() {}
+};
+
+/**
+ * @class updateStrategy
+ * @brief Abstract strategy interface for updating segment tree values.
+ *
+ * Defines how an update value is applied to an existing node value and
+ * provides an identity element for update combination.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class updateStrategy
+{
+    public:
+        virtual T apply(const T &a, const U &b) = 0;
+        virtual U identity() = 0;
+        virtual ~updateStrategy() {}
+};
+
+/**
+ * @class sumMergeStrategy
+ * @brief Merge strategy for range sum operations.
+ *
+ * Implements sum behavior for segment tree nodes and returns 0 as the
+ * identity element.
+ *
+ * @tparam T Type of values stored in the tree.
+ */
+template <typename T>
+class sumMergeStrategy : public mergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return a + b;
+        }
+
+        T identity() override
+        {
+            return T();
+        }
+};
+
+/**
+ * @class sumUpdateStrategy
+ * @brief Update strategy for point add operations.
+ *
+ * Applies an additive update to a single tree value.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class sumUpdateStrategy : public updateStrategy<T, U>
+{
+    public:
+        T apply(const T &a, const U &b) override
+        {
+            return a + static_cast<T>(b);
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class sumAssignStrategy
+ * @brief Update strategy for point assignment operations.
+ *
+ * Replaces the existing value with the new update value.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class sumAssignStrategy : public updateStrategy<T, U>
+{
+    public:
+        T apply(const T &a, const U &b) override
+        {
+            return static_cast<T>(b);
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+template <typename T, typename U>
+class segTree
+{
+    private:
+        vector<T> tree_;
+        unique_ptr<mergeStrategy<T>> mergeStrat_;
+        unique_ptr<updateStrategy<T, U>> updateStrat_;
+        int numElem;
+
+        /**
+         * @brief Recursively build the segment tree from input data.
+         *
+         * @param inArr Input array to build from
+         */
+         void build(const vector<T> &inArr);
+
+        /**
+         * @brief Recursively search for the merge result over a query range.
+         *
+         * Propagates tree values through partial overlaps and uses the merge
+         * strategy to combine child results.
+         *
+         * @param low Current segment left index
+         * @param high Current segment right index
+         * @param i Query range left index
+         * @param j Query range right index
+         * @param pos Current node index in the tree array
+         * @return Merged result for the query range inside this segment
+         */
+        T rangeSearch(int l , int r);
+
+        /**
+         * @brief Recursively update a single index value in the tree.
+         *
+         * Applies the update at the leaf and recomputes parent values using the
+         * merge strategy while traversing back up the recursion.
+         *
+         * @param ind Index to update
+         * @param val Update value to apply
+         */
+        void updateElem(int ind, const U &val);
+
+    public:
+        /**
+         * @brief Construct a segment tree from an input array.
+         *
+         * @param inArr Input array used to initialize leaf values
+         * @param mergeStrat Strategy object used to merge child nodes
+         * @param updateStrat Strategy object used to apply update values
+         */
+        segTree(const vector<T> &inArr, unique_ptr<mergeStrategy<T>> mergeStrat, unique_ptr<updateStrategy<T, U>> updateStrat);
+
+        /**
+         * @brief Query the merge result over a half-open range [i, j].
+         *
+         * @param i Query range left index
+         * @param j Query range right index
+         * @return Merged result for the range
+         * @throws std::out_of_range if query indices are invalid
+         */
+        T search(int i , int j);
+
+        /**
+         * @brief Update a single element in the segment tree.
+         *
+         * The update is applied at the leaf node, and all affected parents
+         * are recomputed using the merge strategy.
+         *
+         * @param i Index to update
+         * @param val Update value to apply at index i
+         * @throws std::out_of_range if the index is invalid
+         */
+        void update(int i, const U &val);
+};
+
+template <typename T, typename U>
+void segTree<T, U>::build(const vector<T> &inArr)
+{
+    // shift all elements to the right by numElem to make space for internal nodes
+    for(int i = numElem - 1; i >= 0; --i)
+    {
+        tree_[numElem + i] = inArr[i];
+    }
+
+    // Now build the internal nodes by merging child values
+    for(int i = numElem - 1; i > 0; --i)
+    {
+        tree_[i] = mergeStrat_->merge(tree_[i << 1], tree_[(i << 1) | 1]);
+    }
+}
+
+template <typename T, typename U>
+segTree<T, U>::segTree(const vector<T> &inArr, unique_ptr<mergeStrategy<T>> mergeStrat, unique_ptr<updateStrategy<T, U>> updateStrat):
+         mergeStrat_(move(mergeStrat)),
+         updateStrat_(move(updateStrat)),
+         numElem(static_cast<int>(inArr.size()))
+{
+    if(numElem == 0)
+        return;
+
+    tree_.assign(2 * numElem, mergeStrat_->identity());
+
+    // Now build the tree 
+    build(inArr);   
+}
+
+template <typename T, typename U>
+T segTree<T, U>::rangeSearch(int l , int r)
+{
+
+    /**
+     * RANGE QUERY LOGIC: The "Buddy System" & Ancestor Climbing
+     * * Iterative querying works bottom-up by traversing siblings (buddies).
+     * A parent node represents the combined sum of its left (even index) 
+     * and right (odd index) children.
+     *
+     * 1. Left Boundary (l):
+     * - If 'l' is a Right Child (odd index): It is the "black sheep" of its 
+     * buddy pair. Its left sibling is OUTSIDE the range. 
+     * Action: Include 'l' in the sum, then move to the right (l++) to 
+     * find the next potential buddy pair.
+     * - If 'l' is a Left Child (even index): Both 'l' and its right buddy 
+     * are potentially in range. 
+     * Action: Don't take 'l' yet; move to the parent (l /= 2) to take 
+     * the combined sum later.
+     *
+     * 2. Right Boundary (r) [Exclusive]:
+     * - If 'r' is a Right Child (odd index): Since 'r' is exclusive, its 
+     * Left Sibling (r-1) is the actual boundary.
+     * - Action: Decrement 'r' (--r) and include that value. This sibling 
+     * is now a "standalone" contributor because its buddy is 'r' (outside).
+     * - If 'r' is a Left Child (even index): Both 'r' and its right sibling 
+     * are outside the range.
+     * Action: Move straight to the parent (r /= 2).
+     *
+     * 3. Convergence:
+     * The loop continues until 'l' and 'r' meet, ensuring we've collected all 
+     * partial fragments before they merge into a common ancestor.
+     */
+
+    T resL = mergeStrat_->identity();
+    T resR = mergeStrat_->identity();
+
+    while (l < r) 
+    {
+        if (l & 1) 
+            resL = mergeStrat_->merge(resL, tree_[l++]);
+        if (r & 1) 
+            resR = mergeStrat_->merge(tree_[--r], resR);
+        l >>= 1;
+        r >>= 1;
+    }
+
+    return mergeStrat_->merge(resL, resR);
+
+}
+
+template <typename T, typename U>
+T segTree<T, U>::search(int i , int j)
+{
+    if( (i < 0 || i > numElem -1) 
+        || (j < 0 || j > numElem -1) 
+        || (i > j))
+    {
+        throw std::out_of_range("Index is out of bounds!");
+    }
+
+    // Search in iterative tree work on extended range where left is inclusive and right is exclusive
+    // [i, j] ---> [i + numElem, j + numElem + 1)
+
+    return rangeSearch(i + numElem, j + numElem + 1);
+}
+
+template <typename T, typename U>
+void segTree<T, U>::updateElem(int ind, const U &val)
+{
+
+    ind += numElem; // shift index to leaf position
+    tree_[ind] = updateStrat_->apply(tree_[ind], val);
+
+    while(ind > 1)
+    {
+        ind >>= 1; // move up to parent
+        tree_[ind] = mergeStrat_->merge(tree_[ind << 1], tree_[(ind << 1) | 1]); // merge with sibling
+    }
+}
+
+template <typename T, typename U>
+void segTree<T, U>::update(int ind, const U &val)
+{
+    if( ind < 0 || ind > numElem - 1)
+        throw std::out_of_range("Index is out of bounds!");
+
+    updateElem(ind, val);
+}
+
+/* Leaving below code as commented as it provides usage guidance. */
+/*
+class NumArray {
+
+    private:
+        unique_ptr<segTree<int, int>> tree;
+
+    public:
+
+        NumArray(const vector<int>& nums) {
+            tree = make_unique<segTree<int, int>>(nums,
+                make_unique<sumMergeStrategy<int>>(),
+                make_unique<sumUpdateStrategy<int, int>>());
+        }
+    
+        void update(int index, int val) {
+            tree->update(index, val);
+        }
+    
+        int sumRange(int left, int right) {
+            return tree->search(left, right);
+        }
+};
+*/
+/**
+ * Your NumArray object will be instantiated and called as such:
+ * NumArray* obj = new NumArray(nums);
+ * obj->update(index,val);
+ * int param_2 = obj->sumRange(left,right);
+ */
+#include <iostream>
+#include <vector>
+#include <memory>
+
+using namespace std;
+
+/**
+ * @struct node
+ * @brief Represents a single node in the persistent segment tree.
+ * * Each node is immutable once created. Updates to the tree result in new 
+ * nodes being created along the update path, while unaffected branches 
+ * are shared with previous versions to optimize memory.
+ * * @tparam T Type of the summarized value (e.g., int for frequency).
+ * @tparam U Type of the update value.
+ */
+template<typename T, typename U>
+class node {
+public:
+    shared_ptr<node<T, U>> left = nullptr;
+    shared_ptr<node<T, U>> right = nullptr;
+    T value;
+
+    node() : value(T()) {}
+    node(T val) : value(val) {}
+
+    // Persistence Secret: The Clone Constructor
+    node(shared_ptr<node<T, U>> other) {
+        if (other) {
+            value = other->value;
+            left = other->left;
+            right = other->right;
+        } else {
+            value = T();
+            left = right = nullptr;
+        }
+    }
+
+    // Note: In persistence, we usually don't delete children in the destructor
+    // because they are shared across multiple roots. Use a memory pool or 
+    // smart pointers for production-grade memory management.
+    ~node() {} 
+};
+
+/**
+ * @class MergeStrategy
+ * @brief Abstract strategy interface for merging segment tree values.
+ *
+ * Defines the merge behavior used by the tree to combine two child values
+ * and the identity element for the merge operation.
+ *
+ * @tparam T Type of values stored in the tree.
+ */
+template <typename T>
+class MergeStrategy
+{
+    public:
+        virtual T merge(const T &a, const T &b) = 0;
+        virtual T identity() = 0;
+        virtual ~MergeStrategy() {}
+};
+
+/**
+ * @class UpdateStrategy
+ * @brief Abstract strategy interface for updating segment tree values.
+ *
+ * Defines how an update value is applied to an existing node value and
+ * provides an identity element for update combination.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class UpdateStrategy
+{
+    public:
+        virtual T apply(const T &a, const U &b) = 0;
+        virtual U identity() = 0;
+        virtual ~UpdateStrategy() {}
+};
+
+/**
+ * @class sumMergeStrategy
+ * @brief Merge strategy for range sum operations.
+ *
+ * Implements sum behavior for segment tree nodes and returns 0 as the
+ * identity element.
+ *
+ * @tparam T Type of values stored in the tree.
+ */
+template <typename T>
+class sumMergeStrategy : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return a + b;
+        }
+
+        T identity() override
+        {
+            return T();
+        }
+};
+
+/**
+ * @class sumUpdateStrategy
+ * @brief Update strategy for point add operations.
+ *
+ * Applies an additive update to a single tree value.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class sumUpdateStrategy : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &a, const U &b) override
+        {
+            return a + static_cast<T>(b);
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class sumAssignStrategy
+ * @brief Update strategy for point assignment operations.
+ *
+ * Replaces the existing value with the new update value.
+ *
+ * @tparam T Type of values stored in the tree.
+ * @tparam U Type of update values.
+ */
+template <typename T, typename U>
+class sumAssignStrategy : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &a, const U &b) override
+        {
+            return static_cast<T>(b);
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+
+/**
+ * @class persistentSegTree
+ * @brief A Persistent Segment Tree implementation using Path Copying.
+ *
+ * This tree maintains a history of versions. Every update creates a new
+ * entry point (root) while sharing common nodes with previous versions
+ * to achieve O(log N) space per update.
+ *
+ * @tparam T Data type of the node value.
+ * @tparam U Data type of the update operation.
+ */
+template<typename T, typename U>
+class persistentSegTree {
+private:
+    // We store all version roots here
+    vector< shared_ptr<node<T, U>> > roots;
+
+    unique_ptr<MergeStrategy<T>> mergeStrat_ ;
+    unique_ptr<UpdateStrategy<T, U>> updateStrat_;
+
+    long long maxRange;
+
+    // Notice the return type node* and the 'prev' parameter
+    shared_ptr<node<T, U>> updateElem(shared_ptr<node<T, U>> prev, long long low, long long high, long long i, const U &val);
+    T searchElem(shared_ptr<node<T, U>> cur, long long low, long long high, long long i, long long j);
+
+public:
+
+    /**
+     * @brief Constructor for persistent segment tree.
+     * @param range The maximum range [0, range-1] the tree will cover.
+     * @param merge Pointer to the merge strategy.
+     * @param updt Pointer to the update strategy.
+     */
+    persistentSegTree(long long range, unique_ptr<MergeStrategy<T>> merge, unique_ptr<UpdateStrategy<T, U>> updt) 
+        : maxRange(range), mergeStrat_(move(merge)), updateStrat_(move(updt)) {
+        // Version 0: Empty tree
+        roots.push_back(nullptr);
+    }
+
+    /**
+     * @brief Creates a new tree version by updating a single point.
+     * @param i The index to update.
+     * @param val The value to apply at index i.
+     */
+    void update(long long i, const U &val) {
+        // We always build the new version based on the CURRENT latest version
+        shared_ptr<node<T, U>> latestRoot = roots.back();
+        shared_ptr<node<T, U>> newRoot = updateElem(latestRoot, 0, maxRange - 1, i, val);
+        roots.push_back(newRoot);
+    }
+
+    /**
+     * @brief Queries a range value for a specific historical version.
+     * @param version The version index to search.
+     * @param i Start of the range.
+     * @param j End of the range.
+     * @return The summarized result for the range.
+     */
+    T search(int version, long long i, long long j) {
+        if (version >= roots.size()) throw out_of_range("Version doesn't exist");
+        return searchElem(roots[version], 0, maxRange - 1, i, j);
+    }
+
+    T queryKth(shared_ptr<node<T, U>> lowVerTree, shared_ptr<node<T, U>> highVerTree, long long low, long long high, long long k);
+    
+    int getLatestVersion() { return roots.size() - 1; }
+
+    shared_ptr<node<T, U>> getVersiondTree(long long ver){return roots[ver];}
+};
+
+/**
+ * @brief Recursively builds a new path to implement persistence.
+ * @param prev Pointer to the node in the previous version.
+ * @param low Current range lower bound.
+ * @param high Current range upper bound.
+ * @param i Target update index.
+ * @param val Update value.
+ * @return Pointer to the newly created (cloned) node.
+ */
+template<typename T, typename U>
+shared_ptr<node<T, U>> persistentSegTree<T, U>::updateElem(shared_ptr<node<T, U>> prev, long long low, long long high, long long i, const U &val) {
+    // 1. Path Copying: Create a NEW node that clones the PREVIOUS node
+    shared_ptr<node<T, U>> newNode = make_shared<node<T, U>>(prev);
+
+    // 2. Base Case: Point update at the leaf
+    if (low == high) {
+        newNode->value = updateStrat_->apply(newNode->value, val);
+        return newNode;
+    }
+
+    long long mid = low + (high - low) / 2;
+    if (i <= mid) {
+        // Go left: newNode gets a NEW left child, but keeps the OLD right child (Shared!)
+        newNode->left = updateElem(newNode->left, low, mid, i, val);
+    } else {
+        // Go right: newNode gets a NEW right child, but keeps the OLD left child (Shared!)
+        newNode->right = updateElem(newNode->right, mid + 1, high, i, val);
+    }
+
+    // 3. Re-calculate the value of the NEW node based on its children
+    T leftVal = newNode->left ? newNode->left->value : mergeStrat_->identity();
+    T rightVal = newNode->right ? newNode->right->value : mergeStrat_->identity();
+    newNode->value = mergeStrat_->merge(leftVal, rightVal);
+
+    return newNode;
+}
+
+template<typename T, typename U>
+T persistentSegTree<T, U>::searchElem(shared_ptr<node<T, U>> cur, long long low, long long high, long long i, long long j) {
+    if (!cur || high < i || low > j) return mergeStrat_->identity();
+    if (low >= i && high <= j) return cur->value;
+
+    long long mid = low + (high - low) / 2;
+    return mergeStrat_->merge(searchElem(cur->left, low, mid, i, j),
+                             searchElem(cur->right, mid + 1, high, i, j));
+}
+
+/**
+     * @brief Performs a dual-root walk to find the k-th smallest element.
+     * * Used for MKTHNUM problems by calculating (highVerTree - lowVerTree)
+     * frequencies on the fly.
+     * * @param lowVerTree Root of the version before the range started.
+     * @param highVerTree Root of the latest version of the range.
+     * @param low Current rank lower bound.
+     * @param high Current rank upper bound.
+     * @param k The k-th element to find.
+     * @return The rank of the k-th smallest element.
+     */
+template<typename T, typename U>
+T persistentSegTree<T, U>::queryKth(shared_ptr<node<T, U>> leftRoot, shared_ptr<node<T, U>> rightRoot, long long low, long long high, long long k) {
+    if (low == high) return low; // We found the Rank
+
+    // The core MKTHNUM logic: Subtract frequencies of the left children
+    int leftCount = (rightRoot && rightRoot->left ? rightRoot->left->value : 0) - 
+                    (leftRoot && leftRoot->left ? leftRoot->left->value : 0);
+
+    int mid = low + (high - low) / 2;
+    if (k <= leftCount) {
+        // The k-th element is in the left half
+        return queryKth(leftRoot ? leftRoot->left : nullptr, 
+                        rightRoot ? rightRoot->left : nullptr, 
+                        low, mid, k);
+    } else {
+        // The k-th element is in the right half, adjust k
+        return queryKth(leftRoot ? leftRoot->right : nullptr, 
+                        rightRoot ? rightRoot->right : nullptr, 
+                        mid + 1, high, k - leftCount);
+    }
+}#include <iostream>
+#include <limits>
+#include <stdexcept>
+
+using namespace std;
+
+/**
+ * @struct node
+ * @brief Represents a single materialized node in the dynamic sparse segment tree.
+ * * Unlike static trees, nodes are allocated on-demand to save memory. 
+ * This implementation follows the "Updated-Self" philosophy: the 'value' field 
+ * always contains the ground truth for this node's range, while 'lazyValue' 
+ * acts as a pending update strictly for its descendants.
+ * * @tparam T Type of the summarized value (e.g., long long for range sum).
+ * @tparam U Type of the update value (e.g., int for add/assign).
+ */
+
+template<typename T, typename U>
+class node
+{
+    public:
+        node *left = nullptr;
+        node *right = nullptr;
+        T value;
+        U lazyValue;
+        bool isLazy = false;
+
+        node() : value(T()), lazyValue(U())
+        {
+
+        }
+
+        ~node()
+        {
+            delete left;
+            delete right;
+        }
+};
+
+
+
+/**
+ * @class MergeStrategy
+ * @brief Abstract base strategy class for main segment tree operations (merge and identity)
+ * 
+ * Defines the interface for different segment tree operations (sum, min, max, gcd, etc.)
+ * 
+ * @tparam T Type of values in the segment tree
+ */
+template <typename T>
+class MergeStrategy
+{
+    public:
+        /**
+         * @brief Merges two values from child nodes
+         * @param a First value
+         * @param b Second value
+         * @return Merged value (operation-specific: sum, min, max, gcd, etc.)
+         */
+        virtual T merge(const T &a, const T &b) = 0;
+        
+        /**
+         * @brief Returns identity element for values (e.g., 0 for sum, INT_MAX for min)
+         * @return Identity/default value
+         */
+        virtual T identity() = 0;
+        
+        virtual ~MergeStrategy() {}
+};
+
+/**
+ * @class UpdateStrategy
+ * @brief Abstract base strategy class for update operations and lazy propagation
+ * 
+ * Defines the interface for how updates are applied and combined.
+ * 
+ * @tparam T Type of values in the segment tree
+ * @tparam U Type of lazy updates (can be different from T)
+ */
+template <typename T, typename U>
+class UpdateStrategy
+{
+    public:
+        /**
+         * @brief Applies update to a node value
+         * @param value Current value at the node
+         * @param updateVal The update to apply
+         * @param low Left boundary of the range
+         * @param high Right boundary of the range
+         * @return Updated value after applying update
+         */
+        virtual T apply(const T &value, const U &updateVal, long long low, long long high) = 0;
+        
+        /**
+         * @brief Combines two lazy updates (when multiple updates are pending)
+         * @param oldLazy Previous lazy update at this node
+         * @param newLazy New lazy update to apply
+         * @return Combined lazy update
+         */
+        virtual U combine(const U &oldLazy, const U &newLazy) = 0;
+        
+        /**
+         * @brief Returns identity element for lazy updates (e.g., 0 for add, no-op for assign)
+         * @return Identity lazy value
+         */
+        virtual U identity() = 0;
+        
+        virtual ~UpdateStrategy() {}
+};
+
+/**
+ * @class SumMain
+ * @brief Main strategy for range sum queries
+ * 
+ * @tparam T Type of values (typically int, long long)
+ */
+template <typename T>
+class SumMain : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return a + b;
+        }
+
+        T identity() override
+        {
+            return T();
+        }
+};
+
+/**
+ * @class MinMain
+ * @brief Main strategy for range minimum queries
+ * 
+ * @tparam T Type of values (typically int, long long)
+ */
+template <typename T>
+class MinMain : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return min(a, b);
+        }
+
+        T identity() override
+        {
+            return numeric_limits<T>::max();
+        }
+};
+
+/**
+ * @class MaxMain
+ * @brief Main strategy for range maximum queries
+ * 
+ * @tparam T Type of values (typically int, long long)
+ */
+template <typename T>
+class MaxMain : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return max(a, b);
+        }
+
+        T identity() override
+        {
+            return numeric_limits<T>::min();
+        }
+};
+
+/**
+ * @class AddUpdate
+ * @brief Update strategy for range add operations
+ * 
+ * Supports adding a value to each element in a range.
+ * Works with sum, min, max main strategies.
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to add)
+ */
+template <typename T, typename U>
+class AddUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, long long low, long long high) override
+        {
+            return value + static_cast<T>(updateVal) * (high - low + 1);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return oldLazy + newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class SumAssignUpdate
+ * @brief Update strategy for range assignment on sum main strategy
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to assign)
+ */
+template <typename T, typename U>
+class SumAssignUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, long long low, long long high) override
+        {
+            return static_cast<T>(updateVal) * (high - low + 1);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class MinAssignUpdate
+ * @brief Update strategy for range assignment on min main strategy
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to assign)
+ */
+template <typename T, typename U>
+class MinAssignUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, long long low, long long high) override
+        {
+            return static_cast<T>(updateVal);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class MaxAssignUpdate
+ * @brief Update strategy for range assignment on max main strategy
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to assign)
+ */
+template <typename T, typename U>
+class MaxAssignUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, long long low, long long high) override
+        {
+            return static_cast<T>(updateVal);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+
+/**
+ * @class segTree
+ * @brief A Dynamic Sparse Segment Tree with Lazy Propagation.
+ * * This tree manages massive virtual ranges (up to 10^18) by only allocating 
+ * memory for indices that have been updated or queried. It uses the 
+ * Strategy Pattern to decouple the core tree logic from mathematical 
+ * operations like Sum, Min, or Max.
+ * * @tparam T The data type of the range result.
+ * @tparam U The data type of the update operation.
+ */
+
+template<typename T, typename U>
+class segTree
+{
+    private:
+        node<T, U> *tree_ = nullptr;
+        MergeStrategy<T> *mergeStrat_ = nullptr;
+        UpdateStrategy<T, U> *updateStrat_ = nullptr;
+        long long maxRange;
+        long long numElem = 0; // For diagnostic purpose
+
+        void pushLazyUpdates(node<T, U> *cur, long long low, long long high);
+        void updateElem(node<T, U>*  &cur, long long low, long long high, long long i, long long j, const U &val);
+        T searchElem(node<T, U> *cur, long long low, long long high, long long i, long long j);
+
+    public:
+        segTree(long long range, MergeStrategy<T> *merge, UpdateStrategy<T,U> *updt);
+        ~segTree();
+        
+        void update(long long i, long long j, const U &val);
+        T search(long long i, long long j);
+        long long getNodeCount() const { return numElem; }
+};
+
+template<typename T, typename U>
+segTree<T,U>::segTree(long long range, MergeStrategy<T> *merge, UpdateStrategy<T, U> *updt) : 
+              maxRange(range),
+              mergeStrat_(merge),
+              updateStrat_(updt),
+              numElem(0)
+{
+
+}
+
+template<typename T, typename U>
+segTree<T,U>::~segTree()
+{
+    delete tree_;
+    delete mergeStrat_;
+    delete updateStrat_;
+}
+
+/**
+ * @brief Materializes child nodes and propagates pending lazy updates.
+ * * Acts as the "Node Factory." It ensures that if a node has a pending 
+ * update, that update is inherited by its children. If children do 
+ * not exist, they are instantiated at this stage.
+ * * @param cur Pointer to the current parent node.
+ * @param low The lower bound of the parent's current range.
+ * @param high The upper bound of the parent's current range.
+ */
+
+template<typename T, typename U>
+void segTree<T, U>::pushLazyUpdates(node<T, U> *cur, long long low, long long high)
+{
+    // We are following lazy to children philosophy
+    // Meaning a node which is tagged as lazy is acutally updated but it still need to pass
+    // lazy updates to its children
+
+    if(cur && cur->isLazy)
+    {
+        // First create children if not there already
+
+        if(cur->left == nullptr)
+        {
+            cur->left = new node<T, U>();
+            numElem++;
+        }
+            
+
+        if(cur->right == nullptr)
+        {
+            cur->right = new node<T, U>();
+            numElem++;
+        }
+            
+
+        // Update children, as children will not become lazy to their children but direct chilren will
+        // be up to date.
+        long long mid = low + (high - low) / 2;
+
+        cur->left->value = updateStrat_->apply(cur->left->value, cur->lazyValue, low, mid);
+        cur->right->value = updateStrat_->apply(cur->right->value, cur->lazyValue, mid + 1, high);
+
+        // Now update their lazy value. necessary for cascading updates
+        cur->left->lazyValue = updateStrat_->combine(cur->left->lazyValue, cur->lazyValue);
+        cur->right->lazyValue = updateStrat_->combine(cur->right->lazyValue, cur->lazyValue);
+
+        // Make children lazy to their children
+        cur->left->isLazy = true;
+        cur->right->isLazy = true;
+
+        // Clear lazy flag for cur node as it has successfully passed lazyness to their children
+        cur->isLazy = false;
+        cur->lazyValue = updateStrat_->identity();
+    }
+
+}
+
+/**
+ * @brief Recursively performs a range update on the sparse tree.
+ * * Implements the "Lazy Stop" optimization: if the current range is 
+ * fully contained within the target range, the node is updated and 
+ * tagged, but recursion stops to prevent unnecessary node allocation.
+ * * @param cur Reference to the pointer of the current node (allows in-place allocation).
+ * @param low Current range lower bound.
+ * @param high Current range upper bound.
+ * @param i Target update range start (inclusive).
+ * @param j Target update range end (inclusive).
+ * @param val The update value (e.g., the value to add or assign).
+ */
+
+template<typename T, typename U>
+void segTree<T, U>::updateElem(node<T, U>* &cur, long long low, long long high, long long i, long long j, const U &val)
+{
+    // First check if cur is nullptr then create it as we are creating the path while updting
+
+    if(!cur)
+    {
+        numElem++;
+        cur = new node<T,U>();
+    }
+        
+
+    // if no overlap
+    if(high < i || j < low)
+        return;
+
+    // if total overlap
+    if(low >=i && high <=j)
+    {
+        // make node lazy to its children but updated self
+        cur->value = updateStrat_->apply(cur->value, val, low, high);
+        cur->lazyValue = updateStrat_->combine(cur->lazyValue, val);
+        cur->isLazy = true;
+        return;
+    }
+
+    // partial overlap
+    else
+    {
+        pushLazyUpdates(cur, low, high);
+    }
+
+    long long mid = low + (high - low) / 2;
+
+    updateElem(cur->left, low, mid, i, j, val);
+    updateElem(cur->right, mid + 1, high, i, j, val);
+
+    // push will gurantee that both children exist so don`t need null checks
+    cur->value = mergeStrat_->merge(cur->left->value, cur->right->value);
+
+}
+
+/**
+ * @brief Recursively queries a range for its summarized value.
+ * * This method is "Memory-Safe": it will not create new nodes for 
+ * empty (nullptr) ranges, instead returning the identity value. It 
+ * only triggers a push if it hits a lazy node during a partial overlap.
+ * * @param cur Pointer to the current node.
+ * @param low Current range lower bound.
+ * @param high Current range upper bound.
+ * @param i Target query range start (inclusive).
+ * @param j Target query range end (inclusive).
+ * @return The summarized result for the requested range.
+ */
+
+template<typename T, typename U>
+T segTree<T, U>::searchElem(node<T, U> *cur, long long low, long long high, long long i, long long j)
+{
+    if(cur == nullptr)
+        return mergeStrat_->identity();
+
+    // No overlap
+    if(high < i || low > j)
+        return mergeStrat_->identity();
+
+    // Total overlap
+    if(low >= i && high <=j)
+    {
+        return cur->value;
+    }
+
+    // The remianing case is no overlap, hence push the lazy updates down.
+    pushLazyUpdates(cur, low, high);
+
+    long long mid = low + (high - low) / 2;
+
+    T left = searchElem(cur->left, low, mid, i, j);
+    T right = searchElem(cur->right, mid + 1, high, i, j);
+
+    return mergeStrat_->merge(left, right);
+}
+
+/**
+ * @brief Performs a range update [i, j] with value val.
+ * @throws std::out_of_range if indices are outside [0, maxRange - 1].
+ */
+
+template<typename T, typename U>
+void segTree<T, U>::update(long long i, long long j, const U &val)
+{
+    if( i < 0 || i > maxRange - 1 || j < 0 || j > maxRange - 1 || i > j)
+        throw std::out_of_range("Index is out of bounds!");
+
+    updateElem(tree_, 0, maxRange -1, i, j, val);
+
+}
+
+/**
+ * @brief Performs a range query [i, j].
+ * @return The merged result of the range.
+ * @throws std::out_of_range if indices are outside [0, maxRange - 1].
+ */
+
+template<typename T, typename U>
+T segTree<T, U>::search(long long i , long long j)
+{
+    if( i < 0 || i > maxRange - 1 || j < 0 || j > maxRange - 1 || i > j)
+        throw std::out_of_range("Index is out of bounds!");
+
+    return searchElem(tree_, 0, maxRange -1, i, j);
+}#include <iostream>
+#include <vector>
+#include <memory>
+#include <stdexcept>
+#include <limits>
+#include <algorithm>
+
+using namespace std;
+
+/**
+ * @struct segTreeNode
+ * @brief Represents a single node in the lazy segment tree
+ * 
+ * @tparam T Type of value stored in the node
+ * @tparam U Type of lazy update stored in the node
+ * 
+ * @member value The actual value stored at this node (e.g., sum, min, max)
+ * @member lazy The pending lazy update that hasn't been propagated yet
+ * @member isLazy Flag indicating if this node has a pending lazy update
+ */
+template <typename T, typename U>
+class segTreeNode
+{
+    public:
+        T value;
+        U lazy;
+        bool isLazy;
+
+        segTreeNode(): value(T()), lazy(U()), isLazy(false) {}
+};
+
+
+/**
+ * @class MergeStrategy
+ * @brief Abstract base strategy class for main segment tree operations (merge and identity)
+ * 
+ * Defines the interface for different segment tree operations (sum, min, max, gcd, etc.)
+ * 
+ * @tparam T Type of values in the segment tree
+ */
+template <typename T>
+class MergeStrategy
+{
+    public:
+        /**
+         * @brief Merges two values from child nodes
+         * @param a First value
+         * @param b Second value
+         * @return Merged value (operation-specific: sum, min, max, gcd, etc.)
+         */
+        virtual T merge(const T &a, const T &b) = 0;
+        
+        /**
+         * @brief Returns identity element for values (e.g., 0 for sum, INT_MAX for min)
+         * @return Identity/default value
+         */
+        virtual T identity() = 0;
+        
+        virtual ~MergeStrategy() {}
+};
+
+/**
+ * @class UpdateStrategy
+ * @brief Abstract base strategy class for update operations and lazy propagation
+ * 
+ * Defines the interface for how updates are applied and combined.
+ * 
+ * @tparam T Type of values in the segment tree
+ * @tparam U Type of lazy updates (can be different from T)
+ */
+template <typename T, typename U>
+class UpdateStrategy
+{
+    public:
+        /**
+         * @brief Applies update to a node value
+         * @param value Current value at the node
+         * @param updateVal The update to apply
+         * @param low Left boundary of the range
+         * @param high Right boundary of the range
+         * @return Updated value after applying update
+         */
+        virtual T apply(const T &value, const U &updateVal, int low, int high) = 0;
+        
+        /**
+         * @brief Combines two lazy updates (when multiple updates are pending)
+         * @param oldLazy Previous lazy update at this node
+         * @param newLazy New lazy update to apply
+         * @return Combined lazy update
+         */
+        virtual U combine(const U &oldLazy, const U &newLazy) = 0;
+        
+        /**
+         * @brief Returns identity element for lazy updates (e.g., 0 for add, no-op for assign)
+         * @return Identity lazy value
+         */
+        virtual U identity() = 0;
+        
+        virtual ~UpdateStrategy() {}
+};
+
+/**
+ * @class SumMain
+ * @brief Main strategy for range sum queries
+ * 
+ * @tparam T Type of values (typically int, long long)
+ */
+template <typename T>
+class SumMain : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return a + b;
+        }
+
+        T identity() override
+        {
+            return T();
+        }
+};
+
+/**
+ * @class MinMain
+ * @brief Main strategy for range minimum queries
+ * 
+ * @tparam T Type of values (typically int, long long)
+ */
+template <typename T>
+class MinMain : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return min(a, b);
+        }
+
+        T identity() override
+        {
+            return numeric_limits<T>::max();
+        }
+};
+
+/**
+ * @class MaxMain
+ * @brief Main strategy for range maximum queries
+ * 
+ * @tparam T Type of values (typically int, long long)
+ */
+template <typename T>
+class MaxMain : public MergeStrategy<T>
+{
+    public:
+        T merge(const T &a, const T &b) override
+        {
+            return max(a, b);
+        }
+
+        T identity() override
+        {
+            return numeric_limits<T>::min();
+        }
+};
+
+/**
+ * @class AddUpdate
+ * @brief Update strategy for range add operations
+ * 
+ * Supports adding a value to each element in a range.
+ * Works with sum, min, max main strategies.
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to add)
+ */
+template <typename T, typename U>
+class AddUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, int low, int high) override
+        {
+            return value + static_cast<T>(updateVal) * (high - low + 1);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return oldLazy + newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class SumAssignUpdate
+ * @brief Update strategy for range assignment on sum main strategy
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to assign)
+ */
+template <typename T, typename U>
+class SumAssignUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, int low, int high) override
+        {
+            return static_cast<T>(updateVal) * (high - low + 1);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class MinAssignUpdate
+ * @brief Update strategy for range assignment on min main strategy
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to assign)
+ */
+template <typename T, typename U>
+class MinAssignUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, int low, int high) override
+        {
+            return static_cast<T>(updateVal);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class MaxAssignUpdate
+ * @brief Update strategy for range assignment on max main strategy
+ * 
+ * @tparam T Type of values
+ * @tparam U Type of updates (value to assign)
+ */
+template <typename T, typename U>
+class MaxAssignUpdate : public UpdateStrategy<T, U>
+{
+    public:
+        T apply(const T &value, const U &updateVal, int low, int high) override
+        {
+            return static_cast<T>(updateVal);
+        }
+
+        U combine(const U &oldLazy, const U &newLazy) override
+        {
+            return newLazy;
+        }
+
+        U identity() override
+        {
+            return U();
+        }
+};
+
+/**
+ * @class segTree
+ * @brief Lazy Segment Tree implementation for efficient range queries and updates
+ * 
+ * A generic segment tree using lazy propagation to handle range queries and range updates
+ * efficiently. Supports various operations through separate main and update strategies.
+ * 
+ * Time Complexity:
+ * - build(): O(n)
+ * - search(i, j): O(log n)
+ * - update(i, j, val): O(log n)
+ * 
+ * Space Complexity: O(n)
+ * 
+ * @tparam T Type of values stored in the tree
+ * @tparam U Type of lazy updates (can be different from T)
+ */
+template <typename T, typename U>
+class segTree
+{
+    private:
+        vector<segTreeNode<T, U>> tree_;           ///< Array representing the segment tree with lazy values
+        unique_ptr<MergeStrategy<T>> mergeStrat_;      ///< Strategy defining merge operation
+        unique_ptr<UpdateStrategy<T, U>> updateStrat_; ///< Strategy defining update operations
+        int numElem;                                ///< Number of elements in original array
+
+        /**
+         * @brief Applies pending lazy updates and propagates to children
+         * @param low Left boundary of current node's range
+         * @param high Right boundary of current node's range
+         * @param pos Position of current node in tree array
+         */
+        void applyAndPushUpdates(int low, int high, int pos);
+        
+        /**
+         * @brief Recursively builds the segment tree from input array
+         * @param inArr Input array
+         * @param low Left boundary of current range
+         * @param high Right boundary of current range
+         * @param pos Position of current node in tree array
+         * @return Value at current node after building subtree
+         */
+        T build(vector<T> &inArr, int low, int high, int pos);
+        
+        /**
+         * @brief Recursively searches for range query result with lazy propagation
+         * @param low Left boundary of current node's range
+         * @param high Right boundary of current node's range
+         * @param i Query range start
+         * @param j Query range end
+         * @param pos Position of current node in tree array
+         * @return Result of query operation on range [i, j]
+         */
+        T rangeSearch(int low, int high, int i , int j, int pos);
+        
+        /**
+         * @brief Recursively updates a range with lazy propagation
+         * @param low Left boundary of current node's range
+         * @param high Right boundary of current node's range
+         * @param i Update range start
+         * @param j Update range end
+         * @param val Value to apply in the update (operation-specific)
+         * @param pos Position of current node in tree array
+         */
+        void updateElem(int low, int high, int i, int j, const U &val, int pos);
+
+    public:
+        /**
+         * @brief Constructor: Initializes the segment tree
+         * @param inArr Reference to input array
+         * @param mergeStrat Unique pointer to merge strategy defining merge operation
+         * @param updateStrat Unique pointer to update strategy defining update operations
+         */
+        segTree(vector<T> &inArr, unique_ptr<MergeStrategy<T>> mergeStrat, unique_ptr<UpdateStrategy<T, U>> updateStrat);
+        
+        /**
+         * @brief Performs a range query
+         * @param i Left boundary of query range (0-indexed, inclusive)
+         * @param j Right boundary of query range (0-indexed, inclusive)
+         * @return Result of query operation on range [i, j]
+         * @throws std::out_of_range if indices are out of bounds
+         */
+        T search(int i , int j);
+        
+        /**
+         * @brief Performs a range update with lazy propagation
+         * @param i Left boundary of update range (0-indexed, inclusive)
+         * @param j Right boundary of update range (0-indexed, inclusive)
+         * @param val Value to apply in the update (operation-specific)
+         * @throws std::out_of_range if indices are out of bounds
+         */
+        void update(int i, int j, const U &val);
+};
+
+template <typename T, typename U>
+T segTree<T, U>::build(vector<T> &inArr, int low, int high, int pos)
+{
+    if(low == high)
+    {
+        tree_[pos].value = inArr[low];
+        tree_[pos].lazy = updateStrat_->identity();
+        tree_[pos].isLazy = false;
+        return tree_[pos].value;
+    }
+
+    int mid = low + (high - low) / 2;
+
+    T left = build(inArr, low, mid, 2 * pos + 1);
+    T right = build(inArr, mid +1, high, 2 * pos + 2);
+
+    tree_[pos].value = mergeStrat_->merge(left, right);
+
+    return tree_[pos].value;
+}
+
+template <typename T, typename U>
+segTree<T, U>::segTree(vector<T> &inArr, unique_ptr<MergeStrategy<T>> mergeStrat, unique_ptr<UpdateStrategy<T, U>> updateStrat):
+         mergeStrat_(move(mergeStrat)),
+         updateStrat_(move(updateStrat)),
+         numElem(inArr.size())
+{
+    tree_.assign(4 * numElem, segTreeNode<T, U>());
+
+    // Now build the tree 
+    build(inArr, 0, numElem -1, 0);   
+}
+
+template <typename T, typename U>
+void segTree<T, U>::applyAndPushUpdates(int low, int high, int pos)
+{
+    if(tree_[pos].isLazy)
+    {
+        // // propagate the lazy value to the current node
+        // tree_[pos].value = updateStrat_->apply(tree_[pos].value, tree_[pos].lazy, low, high);
+
+        // if its not a leaf node then propagate the lazy value to its children
+        if(low != high)
+        {
+            // update child node as we now following laxy to children philosophy
+            // Which means once we push updates to children they will be updated
+            // to self but lazy to their children
+
+            int mid = low + (high - low) / 2;
+            tree_[2 * pos + 1].value = updateStrat_->apply(tree_[2 * pos + 1].value, tree_[pos].lazy, low, mid);
+            tree_[2 * pos + 2].value = updateStrat_->apply(tree_[2 * pos + 2].value, tree_[pos].lazy, mid + 1, high);
+
+            // Push laziness down
+            tree_[2 * pos + 1].isLazy = true;
+            tree_[2 * pos + 2].isLazy = true;
+
+            // Combine chidren lazy values for cascading updates
+            tree_[2 * pos + 1].lazy = updateStrat_->combine(tree_[2 * pos + 1].lazy, tree_[pos].lazy);
+            tree_[2 * pos + 2].lazy = updateStrat_->combine(tree_[2 * pos + 2].lazy, tree_[pos].lazy);
+
+        }
+
+        // Make cur node as non-lazy as it has pushed lazyness
+        tree_[pos].isLazy = false;
+        tree_[pos].lazy = updateStrat_->identity();
+    }
+}
+
+template <typename T, typename U>
+T segTree<T, U>::rangeSearch(int low, int high, int i , int j, int pos)
+{
+
+    // check if total overlap then return
+    if(low >= i && high <= j)
+        return tree_[pos].value;
+
+    // if no overlap return identity value
+    if(high < i || low > j)
+        return mergeStrat_->identity();
+
+    // partial overlap need to check both sides
+
+    // The very first thing is to propagate the
+    // lazy value if there is any pending update for the children
+    // in case of partial overlap
+    applyAndPushUpdates(low, high, pos);
+
+    int mid = low + (high - low) / 2;
+    T left = rangeSearch(low, mid, i, j, 2 * pos + 1);
+    T right = rangeSearch(mid + 1 , high , i, j, 2 * pos + 2);
+
+    return mergeStrat_->merge(left, right);
+}
+
+template <typename T, typename U>
+T segTree<T, U>::search(int i , int j)
+{
+    if( (i < 0 || i > numElem -1) 
+        || (j < 0 || j > numElem -1) 
+        || (i > j))
+    {
+        throw std::out_of_range("Index is out of bounds!");
+    }
+
+    return rangeSearch(0, numElem -1, i, j, 0);
+}
+
+template <typename T, typename U>
+void segTree<T, U>::updateElem(int low, int high, int i , int j, const U &val, int pos)
+{
+
+    // This is total overlap
+    if(low >= i && high <= j)
+    {
+        // Node will always be updated to self and lazy to children
+        tree_[pos].value = updateStrat_->apply(tree_[pos].value, val, low, high);
+
+        // Make node lazy to children
+        tree_[pos].isLazy = true;
+        tree_[pos].lazy = updateStrat_->combine(tree_[pos].lazy, val);
+
+        return;
+    }
+
+    // No overlap
+    if(j < low || i > high)
+        return;
+
+    // Parital overlap
+    // The very first thing is to propagate the
+    // lazy value if there is any pending update for children
+    applyAndPushUpdates(low, high, pos);
+
+    int mid = low + (high - low) / 2;
+
+    // Partial overlap
+    updateElem(low, mid, i , j, val, 2 * pos + 1);
+    updateElem(mid + 1, high, i , j, val, 2 * pos + 2);
+
+    tree_[pos].value = mergeStrat_->merge(tree_[2 * pos + 1].value, tree_[2 * pos + 2].value);
+}
+
+template <typename T, typename U>
+void segTree<T, U>::update(int i, int j, const U &val)
+{
+    if( i < 0 || i > numElem - 1 || j < 0 || j > numElem - 1 || i > j)
+        throw std::out_of_range("Index is out of bounds!");
+
+    updateElem(0, numElem -1, i , j , val, 0);
+}
+
+// ============ EXAMPLE USAGE ============
+/*
+int main() {
+    // Example 1: Range Sum Query with Range Add Updates
+    {
+        vector<int> arr = {1, 2, 3, 4, 5};
+        
+        // Create segment tree with sum main and add update
+        segTree<int, int> tree(arr, make_unique<SumMain<int>>(), make_unique<AddUpdate<int, int>>());
+        
+        // Query: sum of range [0, 4]
+        int result1 = tree.search(0, 4);  // Output: 15
+        cout << "Sum [0, 4]: " << result1 << endl;
+        
+        // Update: add 5 to range [1, 3]
+        tree.update(1, 3, 5);
+        
+        // Query again after update: sum of range [0, 4]
+        int result2 = tree.search(0, 4);  // Output: 30 (1 + (2+5) + (3+5) + (4+5) + 5)
+        cout << "Sum [0, 4] after update: " << result2 << endl;
+    }
+    
+    // Example 2: Range Min Query with Range Assign Updates
+    {
+        vector<int> arr = {10, 20, 30, 40, 50};
+        
+        // Create segment tree with min main and assign update
+        segTree<int, int> minTree(arr, make_unique<MinMain<int>>(), make_unique<MinAssignUpdate<int, int>>());
+        
+        // Query: min of range [1, 3]
+        int minResult = minTree.search(1, 3);  // Output: 20
+        cout << "Min [1, 3]: " << minResult << endl;
+        
+        // Update: set all elements in range [0, 2] to 5
+        minTree.update(0, 2, 5);
+        
+        // Query again: min of range [0, 4]
+        int minResult2 = minTree.search(0, 4);  // Output: 5
+        cout << "Min [0, 4] after assignment: " << minResult2 << endl;
+    }
+    
+    return 0;
+}
+*/
