@@ -1,0 +1,17 @@
+================================================================================
+SPARSE TABLE PROBLEM PATTERNS
+================================================================================
+
+PATTERN 1: STATIC IDEMPOTENT QUERIES (O(1))
+--------------------------------------------------------------------------------
+* Context: The operation satisfies Policy::is_idempotent = true (e.g., Min, Max, GCD).
+* Strategy: Overlap Strategy. 
+  Query(L, R) merges two precomputed overlapping intervals of length 2^k.
+  k = floor(log2(R - L + 1)).
+
+PATTERN 2: STATIC NON-IDEMPOTENT QUERIES (O(log N))
+--------------------------------------------------------------------------------
+* Context: The operation is not idempotent (e.g., Sum, XOR).
+* Strategy: Bit-Stitching Strategy.
+  Query(L, R) decomposes the range length into powers of 2 and merges the 
+  disjoint intervals.
