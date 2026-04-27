@@ -1,0 +1,21 @@
+================================================================================
+SQUARE ROOT DECOMPOSITION PROBLEM PATTERNS
+================================================================================
+
+PATTERN 1: DELTA UPDATES (REVERSIBLE OPERATIONS)
+--------------------------------------------------------------------------------
+* Context: Operations like Sum where the new summary can be derived using the 
+  old value (NewSum = OldSum + NewVal - OldVal).
+* Efficiency: O(1) point updates.
+
+PATTERN 2: FULL BLOCK REBUILDS (NON-REVERSIBLE OPERATIONS)
+--------------------------------------------------------------------------------
+* Context: Operations like Min or GCD where a point change requires looking 
+  at all other elements in the block to find the new summary.
+* Efficiency: O(sqrt N) point updates.
+
+PATTERN 3: BLOCK JUMPING QUERIES
+--------------------------------------------------------------------------------
+* Strategy: For Query(L, R), compute individual elements for partial blocks 
+  at the edges and "jump" across precomputed summaries for full blocks in 
+  the middle.
