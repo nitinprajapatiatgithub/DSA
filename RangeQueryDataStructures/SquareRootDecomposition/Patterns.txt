@@ -1,21 +1,31 @@
 ================================================================================
-SQUARE ROOT DECOMPOSITION PROBLEM PATTERNS
+SQUARE ROOT DECOMPOSITION PATTERNS[cite: 1]
 ================================================================================
 
-PATTERN 1: DELTA UPDATES (REVERSIBLE OPERATIONS)
---------------------------------------------------------------------------------
-* Context: Operations like Sum where the new summary can be derived using the 
-  old value (NewSum = OldSum + NewVal - OldVal).
-* Efficiency: O(1) point updates.
+1. PARTITIONING AND COMPLEXITY[cite: 1]
+   - Block Size: blockSize = max(1, sqrt(N))[cite: 1]
+   - Block Count: (N + blockSize - 1) / blockSize[cite: 1]
+   - Time (Standard): Build O(N), Query O(sqrt(N)), Point Update O(1)[cite: 1]
+   - Time (Lazy): Build O(N), Query O(sqrt(N)), Range Update O(sqrt(N))[cite: 1]
+   - Space: O(sqrt(N)) auxiliary for block storage[cite: 1]
 
-PATTERN 2: FULL BLOCK REBUILDS (NON-REVERSIBLE OPERATIONS)
---------------------------------------------------------------------------------
-* Context: Operations like Min or GCD where a point change requires looking 
-  at all other elements in the block to find the new summary.
-* Efficiency: O(sqrt N) point updates.
+2. LAZY PROPAGATION LOGIC[cite: 1]
+   - Full Blocks: Update summary and lazy tag in O(1) via policy methods[cite: 1]
+   - Partial Blocks: 
+     a. pushDownUpdate(): Apply lazy tags to raw array elements[cite: 1]
+     b. Manual Update: Modify specific elements in the raw array[cite: 1]
+     c. rebuildBlock(): Fully recompute summary from raw elements[cite: 1]
 
-PATTERN 3: BLOCK JUMPING QUERIES
---------------------------------------------------------------------------------
-* Strategy: For Query(L, R), compute individual elements for partial blocks 
-  at the edges and "jump" across precomputed summaries for full blocks in 
-  the middle.
+3. POLICY-BASED DESIGN (IPolicy<T>)[cite: 1]
+   - identity(): Neutral element (e.g., 0 for Sum, INT_MAX for Min)[cite: 1]
+   - merge(a, b): Operation to combine results (Query logic)[cite: 1]
+   - apply(current, cmd, size): Updates a summary in O(1)[cite: 1]
+   - compose(old, new): Merges two lazy tags (Action logic)[cite: 1]
+
+4. COMPATIBILITY & CONSTRAINTS[cite: 1]
+   - Sum Policy: Supports ADD/SET. Formula: current + (val * size)[cite: 1]
+   - Min Policy: Supports ADD/SET. Formula: current + val[cite: 1]
+   - XOR Policy: Supports XOR/SET. Parity check: (size % 2 == 0) ? current : current ^ val[cite: 1]
+   - Conflict: XOR Query + ADD Update = Unsupported (Throws runtime_error)[cite: 1]
+
+================================================================================
